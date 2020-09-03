@@ -10,11 +10,12 @@ source $SCRIPT_DIR/config.sh
 * inotify
     * Alipine, Ubuntu: inotify-tools
 * cwebp
-    * Alpine, Ubuntu: libwebp-tools
+    * Alpine: libwebp-tools
+    * Ubuntu: webp
 
 _EOF_DOC
 
-DEBUG=0
+DEBUG=1
 INFO() {
     if [[ "$DEBUG" -eq 1 ]]; then
         echo "$@"

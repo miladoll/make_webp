@@ -13,7 +13,7 @@ DIR_OPENRC_LOCALD=/etc/local.d
 
 setup_openrc:
 	cp $(CUR_DIR)/make_webp.start $(DIR_OPENRC_LOCALD) ; \
-	sed \
+	sed -i \
 		-e 's|%%CUR_DIR%%|$(CUR_DIR)|' \
 			$(DIR_OPENRC_LOCALD)/make_webp.start \
 	; \
@@ -21,7 +21,7 @@ setup_openrc:
 
 setup_systemd:
 	cp $(CUR_DIR)/make_webp.service $(DIR_SYSTEMD_UNITS) ; \
-	sed \
+	sed -i \
 		-e 's|%%CUR_DIR%%|$(CUR_DIR)|' \
 			$(DIR_SYSTEMD_UNITS)/make_webp.service \
 	; \
