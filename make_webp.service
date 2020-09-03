@@ -1,0 +1,13 @@
+[Unit]
+Description = make alternative webp files
+
+[Service]
+ExecStart = %%CUR_DIR%%/make_webp.sh
+ExecStop = /bin/kill ${MAINPID}
+Restart = always
+Type = simple
+User = nginx
+Group = nginx
+
+[Install]
+WantedBy = multi-user.target

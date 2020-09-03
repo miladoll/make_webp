@@ -1,0 +1,4 @@
+#!/bin/bash
+
+nohup sudo -u nginx %%CUR_DIR%%/make_webp.sh | logger &
+
