@@ -29,3 +29,4 @@ setup_systemd:
 	systemctl list-unit-files --type=service | grep make_webp ; \
 	systemctl is-active make_webp ; \
 	systemctl is-enabled make_webp ;
+	systemctl daemon-reload
