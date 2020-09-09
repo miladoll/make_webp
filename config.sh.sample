@@ -1,0 +1,3 @@
+TARGET_DIRS=(
+    /var/www-nginx/example.com/wp-content
+)
