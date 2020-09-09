@@ -2,18 +2,20 @@
 #set -e
 
 SCRIPT_DIR=$(cd $(dirname $0); pwd)
+
 source $SCRIPT_DIR/config.sh
 
-: <<_EOF_DOC
-### 必要なパッケージ
-
-* inotify
-    * Alipine, Ubuntu: inotify-tools
-* cwebp
-    * Alpine: libwebp-tools
-    * Ubuntu: webp
-
-_EOF_DOC
+# NO_DAEMON=1 だと指定ディレクトリ配下をWebP化だけして終了
+NO_DAEMON=${NO_DAEMON:-0}
+# DEBUG=1 だとだらだらとprintデバッグするよ
+DEBUG=${DEBUG:-0}
+# cwebp に与えるWebPのクオリティ値だよ
+QUALITY=${QUALITY:-90}
+# この値以上のファイルサイズのJPEGをWebPにするよ
+#   0のときはJPEGはWebPにしないよ
+JPEG_LARGER_THAN=${JPEG_LARGER_THAN:-0}
+# TARGET_DIRS は配列でターゲットディレクトリリスト。
+# ただしコマンドライン引数を与えるとそっちが優先されるよ
 
 INFO() {
     if [[ "$DEBUG" -eq 1 ]]; then
@@ -27,13 +29,22 @@ get_ext() {
     echo $doubtful_ext
 }
 
-convert_png_to_webp() {
-    local from_png_file=$1
+get_size() {
+    local file=$1
+    if [[ ! -r $file ]]; then
+        echo 0
+        return 0
+    fi
+    wc -c < $file
+}
+
+convert_image_to_webp() {
+    local from_image_file=$1
     local to_webp_file=$2
     cwebp \
         -quiet \
         -q 99 \
-        $from_png_file \
+        $from_image_file \
         -o $to_webp_file \
             > /dev/null 2>&1
 }
@@ -41,16 +52,30 @@ convert_png_to_webp() {
 renew_webp() {
     local file_name_base=$1
     local file_name_webp="$1.webp"
-    # PNGだけが不可逆フォーマットであり
-    # WebPの可逆フォーマットにした場合大きな効果があるので
-    # WebP版を作成する
-    if [[ $( get_ext "$file_name_base" ) == 'png' ]]; then
+    local file_original_ext=$( get_ext "$file_name_base" )
+    # * PNG
+    #       * 不可逆フォーマットであり
+    #         WebPの可逆フォーマットにした場合確実に大きな効果があるので
+    #         かならずWebP版を作成する
+    # * JPEG
+    #       * 指定ファイルサイズ以上ならWebPにするといいかもしんない
+    local file_original_is_jpeg=0
+    if \
+        [[ $file_original_ext == 'jpg' ]] \
+        || [[ $file_original_ext == 'jpeg' ]] \
+    ; then
+        file_original_is_jpeg=1
+    fi
+    if \
+        [[ $file_original_ext == 'png' ]] \
+        || [[ $file_original_is_jpeg -eq 1 ]] \
+    ; then
         :
     else
         return 0
     fi
     INFO "WebP Check: $file_name_webp"
-    # タイムスタンプの比較はfindでまとめて変換するときに備えて用意
+    # WebPが古かったり存在しなかったら作業する
     if \
         [[ -f $file_name_webp ]] \
         && [[ $file_name_webp -ot $file_name_base ]] \
@@ -61,15 +86,41 @@ renew_webp() {
     else
         return 0
     fi
-    convert_png_to_webp "$file_name_base" "$file_name_webp"
+    if \
+        [[ $file_original_is_jpeg -eq 1 ]] \
+        && [[ $JPEG_LARGER_THAN -lt 1 ]] \
+    ; then
+        # JPEGはWebPにしないモード
+        return 0
+    fi
+    local file_size=$(get_size $file_name_base)
+    if \
+        [[ $file_original_is_jpeg -eq 1 ]] \
+        && [[ $file_size -lt $JPEG_LARGER_THAN ]] \
+    ; then
+        # $JPEG_LARGER_THAN より小さいJPEGは対象外
+        return 0
+    fi
+    convert_image_to_webp "$file_name_base" "$file_name_webp"
     INFO "converted: $file_name_webp"
 }
 
-# 不要になった .png.webp は消す
+# 不要になった .(png|jpg|jpeg).webp は消す
 remove_webp() {
     local file_name_base=$1
     local file_name_webp="$1.webp"
-    if [[ "$file_name_base" =~ \.png$ ]]; then
+    local file_original_ext=$( get_ext "$file_name_base" )
+    local file_original_is_jpeg=0
+    if \
+        [[ $file_original_ext == 'jpg' ]] \
+        || [[ $file_original_ext == 'jpeg' ]] \
+    ; then
+        file_original_is_jpeg=1
+    fi
+    if \
+        [[ $file_original_ext == 'png' ]] \
+        || [[ $file_original_is_jpeg -eq 1 ]] \
+    ; then
         :
     else
         return 0
@@ -80,38 +131,92 @@ remove_webp() {
     fi
 }
 
-# ターゲットディレクトリ内のpngについてすべてWebPを作成する
-action_make_webp_of_all_pngs() {
+# コマンドラインオプション：
+# ターゲットディレクトリ内の2段階以上の拡張子をもつWebPを削除する
+action_purge_all_supplemental_webp() {
     find \
         "${TARGET_DIRS[@]}" \
         -type f \
-        -name '*.png' \
+        \( \
+            -iname '*.png.webp' \
+            -o -iname '*.jpg.webp' \
+            -o -iname '*.jpeg.webp' \
+        \) \
         -print \
     | while read line
     do
-        INFO "$line"
+        INFO "rm $line"
+        rm -f "$line"
+    done
+    INFO "ACTION purge_all_supplemental_webp done."
+}
+
+# コマンドラインオプション：
+# ターゲットディレクトリ内の png|jpg|jpeg についてすべてWebPを作成する
+action_make_webp_of_all_images() {
+    find \
+        "${TARGET_DIRS[@]}" \
+        -type f \
+        \( \
+            -iname '*.png' \
+            -o -iname '*.jpg' \
+            -o -iname '*.jpeg' \
+        \) \
+        -print \
+    | while read line
+    do
+        INFO "renew $line"
         renew_webp "$line"
     done
-    INFO "Find done."
+    INFO "ACTION make_webp_of_all_images done."
 }
 
 while [[ $# -gt 0 ]]
 do
     OPT="$1"
-    shift
     case $OPT in
-        # ターゲットディレクトリ内のpngについてすべてWebPを作成する
+        # ターゲットディレクトリ内の png|jpg|jpeg についてすべてWebPを作成する
         # だけで終了する
         --all|-a )
+            shift
             INFO '--all|-a make_webp_of_all_pngs'
-            action_make_webp_of_all_pngs
+            # コマンドライン指定のほうが TARGET_DIRS より優先される
+            if [[ "$@" ]]; then
+                TARGET_DIRS=("$@")
+            fi
+            action_make_webp_of_all_images
             exit
+            ;;
+        # ターゲットディレクトリ内の2段階以上の拡張子をもつWebPを削除する
+        # だけで終了する
+        --purge )
+            shift
+            INFO '--purge purge_all_supplemental_webp'
+            # コマンドライン指定のほうが TARGET_DIRS より優先される
+            if [[ "$@" ]]; then
+                TARGET_DIRS=("$@")
+            fi
+            action_purge_all_supplemental_webp
+            exit
+            ;;
+        *)
+            break
             ;;
     esac
 done
 
+# コマンドライン指定のほうが TARGET_DIRS より優先される
+if [[ "$@" ]]; then
+    TARGET_DIRS=("$@")
+fi
+
 # おれはいつだって全ファイル総なめにしてWebPを作っておくんだ
-action_make_webp_of_all_pngs
+action_make_webp_of_all_images
+
+if [[ "$NO_DAEMON" -gt 0 ]]; then
+    INFO 'job done. exit'
+    exit
+fi
 
 INFO 'STARTING inotifywait...'
 

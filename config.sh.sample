@@ -2,3 +2,6 @@ TARGET_DIRS=(
     /var/www-nginx/example.com/wp-content
 )
 DEBUG=0
+QUALITY=90
+JPEG_LARGER_THAN=500000
+NO_DAEMON=0
