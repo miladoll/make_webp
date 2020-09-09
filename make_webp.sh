@@ -15,11 +15,16 @@ source $SCRIPT_DIR/config.sh
 
 _EOF_DOC
 
-DEBUG=1
 INFO() {
     if [[ "$DEBUG" -eq 1 ]]; then
         echo "$@"
     fi
+}
+
+get_ext() {
+    local doubtful_ext=${1##*.}
+    doubtful_ext=${doubtful_ext,,}
+    echo $doubtful_ext
 }
 
 convert_png_to_webp() {
@@ -39,7 +44,7 @@ renew_webp() {
     # PNGだけが不可逆フォーマットであり
     # WebPの可逆フォーマットにした場合大きな効果があるので
     # WebP版を作成する
-    if [[ "$file_name_base" =~ \.png$ ]]; then
+    if [[ $( get_ext "$file_name_base" ) == 'png' ]]; then
         :
     else
         return 0
